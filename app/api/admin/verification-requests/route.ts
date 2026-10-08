@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { notifyDiscord, toolPageUrl } from "@/lib/discord-events";
 import { sendEmail } from "@/lib/resend";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
@@ -166,6 +167,19 @@ export async function POST(request: NextRequest) {
             if (!started) return NextResponse.json({ error: "This request could not be started" }, { status: 409 });
 
             const admins = await getAdminIdentities(supabase, reviewerIds);
+
+            // Only when this admin joins the review, so reopening it doesn't post again
+            if (!(verificationRequest.reviewer_ids || []).includes(admin.id)) {
+                const { data: tool } = await supabase.from("tools").select("name").eq("id", verificationRequest.tool_id).maybeSingle();
+                notifyDiscord({
+                    category: "verify",
+                    event: "Assigned",
+                    subject: { type: "verification", id: verificationRequest.id },
+                    tool: { id: verificationRequest.tool_id, name: tool?.name || "Tool", url: toolPageUrl(verificationRequest.tool_id) },
+                    actor: admins[admin.id]?.name || undefined,
+                });
+            }
+
             return NextResponse.json({ success: true, request: started, admins });
         }
 
@@ -344,6 +358,16 @@ export async function POST(request: NextRequest) {
         if (!emailResult.success) console.warn(`[maturity-admin] Decision email was not sent for ${verificationRequest.id}: ${emailResult.error}`);
 
         const admins = await getAdminIdentities(supabase, reviewerIds);
+
+        notifyDiscord({
+            category: "verify",
+            event: body.decision === "approve" ? "Approved" : "Rejected",
+            subject: { type: "verification", id: verificationRequest.id },
+            tool: { id: tool.id, name: tool.name || "Tool", url: toolPageUrl(tool.id) },
+            actor: admins[admin.id]?.name || undefined,
+            detail: failedRequiredCriteria.length > 0 ? { "Failed criteria": failedRequiredCriteria.map((criterion) => criterion.label).join(", ") } : undefined,
+        });
+
         return NextResponse.json({
             success: true,
             decision: finalStatus,

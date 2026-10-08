@@ -1,3 +1,4 @@
+import { notifyDiscord, toolPageUrl } from "@/lib/discord-events";
 import { runUpdateToolWorkflow } from "@/lib/github-api";
 import { cancelActiveVerificationRequest } from "@/lib/maturity";
 import { sendEmail } from "@/lib/resend";
@@ -188,6 +189,16 @@ export async function POST(request: NextRequest) {
                 });
 
                 notificationSentThisRequest = true;
+
+                notifyDiscord({
+                    id: `toolUpdate:${packageJson.name}@${packageJson.version}:UpdateFailed`,
+                    category: "tool",
+                    event: "UpdateFailed",
+                    subject: { type: "toolUpdate", id: toolUpdateId },
+                    tool: { name: toolName },
+                    reason: validationErrors.join("\n"),
+                    detail: { Package: packageJson.name, Version: packageJson.version },
+                });
             } else {
                 console.info(`[update-tool] Notifications already sent for ${packageJson.name}@${packageJson.version}; skipping duplicate emails.`);
             }
@@ -312,10 +323,23 @@ export async function POST(request: NextRequest) {
             pollIntervalMs: 30000,
         });
 
+        const discordTool = { id: updatedTool.id, name: updatedTool.name || packageJson.displayName || packageJson.name, url: toolPageUrl(updatedTool.id) };
+        const discordDetail = { Package: packageJson.name, Version: packageJson.version };
+
         if (conclusion !== "success") {
             console.warn(`[update-tool] Conversion workflow failed for ${packageJson.name}@${packageJson.version} with conclusion: ${conclusion || "unknown"}`);
+            notifyDiscord({
+                category: "tool",
+                event: "UpdateFailed",
+                subject: { type: "tool", id: updatedTool.id },
+                tool: discordTool,
+                reason: `Update workflow did not complete successfully (${conclusion || "unknown"}).`,
+                detail: discordDetail,
+            });
             return NextResponse.json({ error: "Conversion workflow did not complete successfully" }, { status: 500 });
         }
+
+        notifyDiscord({ category: "tool", event: "Update", subject: { type: "tool", id: updatedTool.id }, tool: discordTool, detail: discordDetail });
 
         return NextResponse.json({
             success: true,

@@ -1,3 +1,4 @@
+import { notifyDiscord, toolPageUrl } from "@/lib/discord-events";
 import { runUpdateToolWorkflow } from "@/lib/github-api";
 import { fetchNpmPackageInfo, ToolPackageJson } from "@/lib/tool-validation";
 import { validatePackageJson } from "@pptb/validate";
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
 
         // Fetch the tool and verify ownership
-        const { data: tool, error: fetchError } = await supabase.from("tools").select("id, user_id, packagename, version").eq("id", toolId).single();
+        const { data: tool, error: fetchError } = await supabase.from("tools").select("id, user_id, packagename, version, name").eq("id", toolId).single();
 
         if (fetchError || !tool) {
             return NextResponse.json({ error: "Tool not found" }, { status: 404 });
@@ -142,10 +143,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             pollIntervalMs: 30000,
         });
 
+        const discordTool = { id: tool.id, name: tool.name || packageJson.displayName || packageJson.name, url: toolPageUrl(tool.id) };
+        const discordDetail = { Package: packageJson.name, Version: packageJson.version };
+
         if (conclusion !== "success") {
             console.warn(`[trigger-update] Update workflow failed for ${packageJson.name}@${packageJson.version} with conclusion: ${conclusion || "unknown"}`);
+            notifyDiscord({
+                category: "tool",
+                event: "UpdateFailed",
+                subject: { type: "tool", id: tool.id },
+                tool: discordTool,
+                reason: `Manual update workflow did not complete successfully (${conclusion || "unknown"}).`,
+                detail: discordDetail,
+            });
             return NextResponse.json({ error: "Update workflow did not complete successfully" }, { status: 500 });
         }
+
+        notifyDiscord({ category: "tool", event: "ManualUpdate", subject: { type: "tool", id: tool.id }, tool: discordTool, detail: discordDetail });
 
         return NextResponse.json({
             success: true,

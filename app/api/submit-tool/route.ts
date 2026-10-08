@@ -1,3 +1,4 @@
+import { notifyDiscord } from "@/lib/discord-events";
 import { sendEmail } from "@/lib/resend";
 import { fetchNpmPackageInfo, ToolPackageJson } from "@/lib/tool-validation";
 import { extractVersionInfo } from "@/lib/version-extraction";
@@ -447,6 +448,19 @@ export async function POST(request: NextRequest) {
                 submissionDate: new Date().toISOString(),
                 submittedBy: user.email || user.id,
             },
+        });
+
+        notifyDiscord({
+            category: "toolSubmission",
+            event: "New",
+            subject: { type: "intake", id: intakeData.id },
+            tool: { name: packageInfo.displayName || cleanPackageName },
+            developer:
+                (packageInfo.contributors || [])
+                    .map((c) => c.name)
+                    .filter(Boolean)
+                    .join(", ") || undefined,
+            detail: { Package: cleanPackageName, Version: packageInfo.version, ...(existingIntake ? { Resubmission: "Yes" } : {}) },
         });
 
         return NextResponse.json({

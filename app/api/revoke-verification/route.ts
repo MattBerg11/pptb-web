@@ -1,3 +1,4 @@
+import { notifyDiscord, toolPageUrl } from "@/lib/discord-events";
 import { sendEmail } from "@/lib/resend";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
@@ -133,6 +134,19 @@ export async function POST(request: NextRequest) {
 
         if (!emailResult.success) {
             console.warn(`[maturity] Verification ${maturityEvent.variant} email was not sent for tool ${toolId}: ${emailResult.error}`);
+        }
+
+        // Grace-period warnings stay email-only; Discord only hears about an actual revocation
+        if (maturityEvent.variant === "revoked") {
+            notifyDiscord({
+                // One post per tool, event and day, so a repeated call can't spam the channel
+                id: `tool:${tool.id}:${event}:${new Date().toISOString().slice(0, 10)}`,
+                category: "verify",
+                event: "Revoked",
+                subject: { type: "tool", id: tool.id },
+                tool: { id: tool.id, name: tool.name || toolName || "Tool", url: toolPageUrl(tool.id) },
+                reason: maturityEvent.reason,
+            });
         }
 
         return NextResponse.json({ success: true, notificationSent: emailResult.success });

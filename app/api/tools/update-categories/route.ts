@@ -1,3 +1,4 @@
+import { notifyDiscord, toolPageUrl } from "@/lib/discord-events";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Verify the tool exists and belongs to the user
-        const { data: tool, error: fetchError } = await supabase.from("tools").select("id, user_id").eq("id", toolId).single();
+        const { data: tool, error: fetchError } = await supabase.from("tools").select("id, user_id, name").eq("id", toolId).single();
 
         if (fetchError || !tool) {
             return NextResponse.json({ error: "Tool not found" }, { status: 404 });
@@ -149,6 +150,15 @@ export async function POST(request: NextRequest) {
         }
 
         const categories = finalCategories.map((category) => ({ id: category.id, name: category.name }));
+
+        const addedNames = finalCategories.filter((category) => categoriesToAdd.includes(category.id)).map((category) => category.name);
+        notifyDiscord({
+            category: "tool",
+            event: "UpdateCategories",
+            subject: { type: "tool", id: toolId },
+            tool: { id: toolId, name: tool.name || "Tool", url: toolPageUrl(toolId) },
+            detail: { Added: addedNames.join(", "), Categories: categories.map((category) => category.name).join(", ") },
+        });
 
         return NextResponse.json({
             success: true,

@@ -1,4 +1,5 @@
-import { ToolStatus, VALID_TOOL_STATUSES } from "@/lib/constants/tool-statuses";
+import { TOOL_STATUSES, ToolStatus, VALID_TOOL_STATUSES } from "@/lib/constants/tool-statuses";
+import { notifyDiscord, toolPageUrl } from "@/lib/discord-events";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Verify the tool belongs to the user
-        const { data: tool, error: fetchError } = await supabase.from("tools").select("id, user_id").eq("id", toolId).single();
+        const { data: tool, error: fetchError } = await supabase.from("tools").select("id, user_id, name").eq("id", toolId).single();
 
         if (fetchError || !tool) {
             return NextResponse.json({ error: "Tool not found" }, { status: 404 });
@@ -85,6 +86,16 @@ export async function POST(request: NextRequest) {
         if (updateError) {
             console.error("Error updating tool status:", updateError);
             return NextResponse.json({ error: "Failed to update tool status" }, { status: 500 });
+        }
+
+        // Going back to active has no Discord event
+        if (status === TOOL_STATUSES.DEPRECATED || status === TOOL_STATUSES.DELETED) {
+            notifyDiscord({
+                category: "tool",
+                event: status === TOOL_STATUSES.DEPRECATED ? "Deprecated" : "Deleted",
+                subject: { type: "tool", id: toolId },
+                tool: { id: toolId, name: tool.name || "Tool", url: status === TOOL_STATUSES.DEPRECATED ? toolPageUrl(toolId) : undefined },
+            });
         }
 
         return NextResponse.json({

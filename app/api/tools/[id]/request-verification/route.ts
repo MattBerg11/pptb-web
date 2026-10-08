@@ -1,3 +1,4 @@
+import { notifyDiscord, toolPageUrl } from "@/lib/discord-events";
 import { ACTIVE_VERIFICATION_STATUSES } from "@/lib/maturity";
 import { sendEmail } from "@/lib/resend";
 import { createClient } from "@supabase/supabase-js";
@@ -106,6 +107,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (!adminEmailResult.success) {
             console.warn(`[maturity] Verification admin email was not sent for request ${verificationRequest.id}: ${adminEmailResult.error}`);
         }
+
+        notifyDiscord({
+            category: "verify",
+            event: "Requested",
+            subject: { type: "verification", id: verificationRequest.id },
+            tool: { id: tool.id, name: tool.name || "Tool", url: toolPageUrl(tool.id) },
+            developer: profile?.name || undefined,
+        });
 
         return NextResponse.json({ success: true, request: verificationRequest, notificationSent: emailResult.success && adminEmailResult.success }, { status: 201 });
     } catch (error) {

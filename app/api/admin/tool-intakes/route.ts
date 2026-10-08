@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { notifyDiscord } from "@/lib/discord-events";
 import { sendEmail } from "@/lib/resend";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
@@ -106,6 +107,16 @@ export async function POST(request: NextRequest) {
                 },
             });
         }
+
+        const discordEvents = { approve: "Approved", reject: "Rejected", needs_changes: "ChangesRequested" } as const;
+        notifyDiscord({
+            category: "toolSubmission",
+            event: discordEvents[action],
+            subject: { type: "intake", id: intakeId },
+            tool: { name: updatedIntake.display_name || updatedIntake.package_name || "Tool submission" },
+            reason: reviewerNotes,
+            detail: updatedIntake.package_name ? { Package: updatedIntake.package_name } : undefined,
+        });
 
         return NextResponse.json({
             success: true,
